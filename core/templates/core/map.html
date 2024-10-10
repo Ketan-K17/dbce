@@ -1,0 +1,100 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Geolocation</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh; /* Ensure body takes full height */
+        }
+        #map {
+            width: 100%;
+            height: 100%; /* Ensure the map div takes full height */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.8.0/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        // Get the coordinates from the request
+        var startLat = parseFloat('{{ request.POST.start_latitude|default:"19.0760" }}'); // Default to Mumbai
+        var startLng = parseFloat('{{ request.POST.start_longitude|default:"72.8777" }}'); // Default to Mumbai
+        var endLat = parseFloat('{{ request.POST.stop_latitude|default:"15.2993" }}'); // Default to Panjim
+        var endLng = parseFloat('{{ request.POST.stop_longitude|default:"74.1240" }}'); // Default to Panjim
+
+        // Log the coordinates
+        console.log("Start Latitude:", startLat);
+        console.log("Start Longitude:", startLng);
+        console.log("End Latitude:", endLat);
+        console.log("End Longitude:", endLng);
+
+        // Initialize the map and set view to the starting coordinates
+        var map = L.map('map').setView([startLat, startLng], 11);
+        var mapLink = "<a href='http://openstreetmap.org'>OpenStreetMap</a>";
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Leaflet &copy; ' + mapLink,
+            maxZoom: 18
+        }).addTo(map);
+
+        var taxiIcon = L.icon({
+            iconUrl: '{% static "core/img/taxi.png" %}', // Use the static tag to reference the image
+            iconSize: [70, 70]
+        });
+
+        var marker = L.marker([startLat, startLng], { icon: taxiIcon }).addTo(map);
+
+        // Add routing control to move the ambulance
+        var routingControl = L.Routing.control({
+            waypoints: [
+                L.latLng(startLat, startLng), // Start point from user input
+                L.latLng(endLat, endLng)      // End point from user input
+            ],
+            routeWhileDragging: true
+        }).on('routesfound', function (e) {
+            var routes = e.routes;
+            var roadNames = [];
+
+            // Extract road names from instructions
+            routes[0].instructions.forEach(function (instruction) {
+                if (instruction.road) {
+                    roadNames.push(instruction.road);
+                }
+            });
+
+            // Post the road names to Django backend
+            var jsonData = { roads: roadNames };
+
+            fetch('/home/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'  // CSRF token for security
+                },
+                body: JSON.stringify(jsonData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Open the home page with updated road data
+                window.open('/home/', '_blank');
+            });
+
+            e.routes[0].coordinates.forEach(function (coord, index) {
+                setTimeout(function () {
+                    marker.setLatLng([coord.lat, coord.lng]);
+                }, 1000 * index);
+            });
+        }).addTo(map);
+    </script>
+
+</body>
+
+</html>
